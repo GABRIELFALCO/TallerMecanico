@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.env
+
+# Node / Vite
+node_modules/
+dist/
+
+# Local database and editor files
+*.db
+.vscode/
