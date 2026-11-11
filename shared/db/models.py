@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, LargeBinary, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from shared.db.database import Base
@@ -13,6 +13,10 @@ def utcnow() -> datetime:
 
 def uuid_str() -> str:
     return str(uuid.uuid4())
+
+
+def system_vehicle_vin() -> str:
+    return f"TM-{uuid.uuid4().hex[:16].upper()}"
 
 
 class Role(Base):
@@ -44,6 +48,13 @@ class Workshop(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     name: Mapped[str] = mapped_column(String(120))
     tax_id: Mapped[str | None] = mapped_column(String(32), nullable=True, unique=True)
+    state: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    municipality: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    locality: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    colony: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    postal_code: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    photo_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True, deferred=True)
+    photo_content_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     memberships: Mapped[list["Membership"]] = relationship(back_populates="workshop", cascade="all, delete-orphan")
@@ -88,3 +99,32 @@ class Customer(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     workshop: Mapped[Workshop] = relationship(back_populates="customers")
+    vehicles: Mapped[list["Vehicle"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
+
+
+class Vehicle(Base):
+    __tablename__ = "vehicles"
+    __table_args__ = (
+        UniqueConstraint("vin", name="uq_vehicle_vin"),
+        UniqueConstraint("workshop_id", "plate", name="uq_vehicle_plate_by_workshop"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    system_vin: Mapped[str | None] = mapped_column(String(19), nullable=True, unique=True, index=True, default=system_vehicle_vin)
+    workshop_id: Mapped[str] = mapped_column(ForeignKey("workshops.id"), index=True)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("customers.id"), index=True)
+    vin: Mapped[str] = mapped_column(String(17), unique=True, index=True)
+    plate: Mapped[str] = mapped_column(String(15), index=True)
+    brand: Mapped[str] = mapped_column(String(80))
+    model: Mapped[str] = mapped_column(String(80))
+    year: Mapped[int] = mapped_column()
+    version: Mapped[str] = mapped_column(String(80))
+    color: Mapped[str] = mapped_column(String(50))
+    mileage: Mapped[int | None] = mapped_column(nullable=True)
+    photo_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True, deferred=True)
+    photo_content_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    technician_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    customer: Mapped[Customer] = relationship(back_populates="vehicles")
+    workshop: Mapped[Workshop] = relationship()

@@ -12,32 +12,91 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import inspect, text
 
 from app.config import get_settings
+from app.repositories import Repositories
+from app.repositories.auth import AuthRepository
+from app.repositories.customers import CustomerRepository
+from app.repositories.roles import RoleRepository
+from app.repositories.workshops import WorkshopRepository
+from app.repositories.vehicles import VehicleRepository
 from app.routers import auth, workshops
 from shared.db.database import Base, SessionLocal, engine
-from shared.db.models import Role
 
 settings = get_settings()
 DEFAULT_ROLES = [
-    ("owner", "Propietario", "Control total del taller y sus usuarios."),
-    ("manager", "Gerente", "Opera el taller y administra clientes."),
-    ("reception", "Recepción", "Registra clientes y gestiona la recepción."),
-    ("mechanic", "Mecánico", "Consulta información operativa asignada."),
+    ("admin", "Administrador", "Administra la operación y los registros del taller."),
+    ("reception", "Recepcionista", "Registra clientes y gestiona la recepción."),
+    ("service_advisor", "Asesor de servicio", "Da seguimiento a servicios y comunicación con clientes."),
+    ("technician", "Técnico", "Consulta y actualiza información técnica asignada."),
+    ("customer", "Cliente", "Consulta información propia y autorizada."),
+    ("system", "Sistema", "Cuenta técnica para procesos internos del sistema."),
 ]
 
 
 def seed_roles() -> None:
     with SessionLocal() as db:
+        repos = Repositories(
+            auth=AuthRepository(db),
+            customers=CustomerRepository(db),
+            roles=RoleRepository(db),
+            workshops=WorkshopRepository(db),
+            vehicles=VehicleRepository(db),
+        )
         for code, name, description in DEFAULT_ROLES:
-            if not db.query(Role).filter(Role.code == code).first():
-                db.add(Role(code=code, name=name, description=description))
-        db.commit()
+            repos.roles.add_if_missing(code, name, description)
+        repos.roles.migrate_legacy_codes({
+            "owner": "admin",
+            "manager": "service_advisor",
+            "mechanic": "technician",
+        })
+        repos.commit()
+
+
+def ensure_workshop_columns() -> None:
+    """Añade ubicación y foto sin borrar talleres existentes en SQLite."""
+    workshop_columns = {
+        "state": "VARCHAR(120)",
+        "municipality": "VARCHAR(120)",
+        "locality": "VARCHAR(120)",
+        "colony": "VARCHAR(120)",
+        "postal_code": "VARCHAR(5)",
+        "photo_data": "BYTEA" if engine.dialect.name == "postgresql" else "BLOB",
+        "photo_content_type": "VARCHAR(32)",
+    }
+    existing_columns = {column["name"] for column in inspect(engine).get_columns("workshops")}
+    missing_columns = workshop_columns.keys() - existing_columns
+    if not missing_columns:
+        return
+    with engine.begin() as connection:
+        for column in missing_columns:
+            connection.execute(text(f"ALTER TABLE workshops ADD COLUMN {column} {workshop_columns[column]}"))
+
+
+def ensure_vehicle_columns() -> None:
+    """Añade el VIN del sistema y los datos de foto a vehículos existentes."""
+    vehicle_columns = {
+        "system_vin": "VARCHAR(19)",
+        "photo_data": "BYTEA" if engine.dialect.name == "postgresql" else "BLOB",
+        "photo_content_type": "VARCHAR(32)",
+    }
+    existing_columns = {column["name"] for column in inspect(engine).get_columns("vehicles")}
+    missing_columns = vehicle_columns.keys() - existing_columns
+    if missing_columns:
+        with engine.begin() as connection:
+            for column in missing_columns:
+                connection.execute(text(f"ALTER TABLE vehicles ADD COLUMN {column} {vehicle_columns[column]}"))
+    with engine.begin() as connection:
+        connection.execute(text("UPDATE vehicles SET system_vin = 'TM-' || upper(substr(replace(id, '-', ''), 1, 16)) WHERE system_vin IS NULL"))
+        connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_vehicles_system_vin ON vehicles(system_vin)"))
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
+    ensure_workshop_columns()
+    ensure_vehicle_columns()
     seed_roles()
     yield
 

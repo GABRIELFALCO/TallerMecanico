@@ -1,11 +1,10 @@
 from datetime import datetime, timezone
 
 from fastapi import Cookie, Depends, HTTPException, Request, status
-from sqlalchemy.orm import Session, joinedload
 
 from app.security import csrf_matches, decode_session_token
-from shared.db.database import get_db
-from shared.db.models import Membership, User, UserSession, Workshop
+from app.repositories import Repositories, get_repositories
+from shared.db.models import Membership, User
 
 
 def require_csrf(request: Request, csrf_token: str | None = Cookie(default=None)) -> None:
@@ -16,7 +15,7 @@ def require_csrf(request: Request, csrf_token: str | None = Cookie(default=None)
 
 def current_user(
     session_token: str | None = Cookie(default=None),
-    db: Session = Depends(get_db),
+    repos: Repositories = Depends(get_repositories),
 ) -> User:
     if not session_token:
         raise HTTPException(status_code=401, detail="Tu sesión no está disponible. Inicia sesión nuevamente.")
@@ -24,8 +23,8 @@ def current_user(
         claims = decode_session_token(session_token)
     except Exception:
         raise HTTPException(status_code=401, detail="Tu sesión expiró. Inicia sesión nuevamente.")
-    db_session = db.get(UserSession, claims.get("sid"))
-    user = db.get(User, claims.get("sub"))
+    db_session = repos.auth.get_session(claims.get("sid"))
+    user = repos.auth.get_user(claims.get("sub"))
     expires_at = db_session.expires_at if db_session else None
     # SQLite devuelve fechas sin zona horaria aunque la columna se declare timezone=True.
     if expires_at and expires_at.tzinfo is None:
@@ -38,14 +37,9 @@ def current_user(
 def active_membership(
     workshop_id: str,
     user: User = Depends(current_user),
-    db: Session = Depends(get_db),
+    repos: Repositories = Depends(get_repositories),
 ) -> Membership:
-    membership = (
-        db.query(Membership)
-        .options(joinedload(Membership.role), joinedload(Membership.workshop))
-        .filter(Membership.user_id == user.id, Membership.workshop_id == workshop_id, Membership.is_active.is_(True))
-        .first()
-    )
+    membership = repos.workshops.get_membership(user.id, workshop_id)
     if not membership:
         raise HTTPException(status_code=403, detail="No tienes autorización para este taller.")
     if not membership.workshop.is_active:
@@ -59,3 +53,13 @@ def require_roles(*roles: str):
             raise HTTPException(status_code=403, detail="Tu rol no tiene permiso para realizar esta acción.")
         return membership
     return dependency
+
+
+def require_admin_user(
+    user: User = Depends(current_user),
+    repos: Repositories = Depends(get_repositories),
+) -> User:
+    """Autoriza operaciones globales de administración de talleres."""
+    if not any(item.role.code == "admin" and item.workshop.is_active for item in repos.auth.list_memberships(user.id)):
+        raise HTTPException(status_code=403, detail="Solo un administrador de un taller activo puede realizar esta acción.")
+    return user
