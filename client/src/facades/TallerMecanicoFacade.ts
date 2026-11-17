@@ -50,8 +50,8 @@ export class TallerMecanicoFacade {
     return backendApi.adminWorkshops()
   }
 
-  updateWorkshop(workshopId: string, name: string, taxId: string, address: WorkshopAddress): Promise<Workshop> {
-    return backendApi.updateWorkshop(workshopId, name, taxId, address)
+  updateWorkshop(workshopId: string, name: string, taxId: string, address: WorkshopAddress, photoDataUrl?: string): Promise<Workshop> {
+    return backendApi.updateWorkshop(workshopId, name, taxId, address, photoDataUrl)
   }
 
   updateWorkshopStatus(workshopId: string, isActive: boolean): Promise<{ message: string }> {

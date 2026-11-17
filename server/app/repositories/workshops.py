@@ -111,7 +111,7 @@ class WorkshopRepository:
     def set_active(self, membership: Membership, is_active: bool) -> None:
         membership.is_active = is_active
 
-    def update_workshop(self, workshop: Workshop, name: str, tax_id: str, state: str, municipality: str, locality: str, colony: str, postal_code: str) -> None:
+    def update_workshop(self, workshop: Workshop, name: str, tax_id: str, state: str, municipality: str, locality: str | None, colony: str, postal_code: str) -> None:
         workshop.name = name
         workshop.tax_id = tax_id
         workshop.state = state
@@ -119,6 +119,10 @@ class WorkshopRepository:
         workshop.locality = locality
         workshop.colony = colony
         workshop.postal_code = postal_code
+
+    def set_photo(self, workshop: Workshop, data: bytes, content_type: str) -> None:
+        workshop.photo_data = data
+        workshop.photo_content_type = content_type
 
     def set_workshop_active(self, workshop: Workshop, is_active: bool) -> None:
         workshop.is_active = is_active

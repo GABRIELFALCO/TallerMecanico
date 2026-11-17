@@ -84,6 +84,10 @@ def update_workshop(
     duplicate_tax_id = repos.workshops.find_by_tax_id(payload.tax_id, exclude_id=workshop_id)
     if duplicate_name or duplicate_tax_id:
         raise HTTPException(status_code=409, detail="Ya existe otro taller con ese nombre o RFC.")
+    if payload.photo_data_url:
+        photo_data, photo_content_type = decode_photo_data_url(payload.photo_data_url)
+        if photo_data is not None and photo_content_type is not None:
+            repos.workshops.set_photo(membership.workshop, photo_data, photo_content_type)
     repos.workshops.update_workshop(membership.workshop, payload.name, payload.tax_id, payload.state, payload.municipality, payload.locality, payload.colony, payload.postal_code)
     repos.commit()
     return {"id": membership.workshop.id, "name": membership.workshop.name, "tax_id": membership.workshop.tax_id, "state": membership.workshop.state, "municipality": membership.workshop.municipality, "locality": membership.workshop.locality, "colony": membership.workshop.colony, "postal_code": membership.workshop.postal_code, "photo_url": f"/api/admin/workshops/{membership.workshop.id}/photo" if membership.workshop.photo_content_type else None, "is_active": membership.workshop.is_active, "role": "admin", "message": "Taller actualizado correctamente."}

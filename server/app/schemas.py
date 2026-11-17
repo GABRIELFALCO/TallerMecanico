@@ -148,7 +148,7 @@ class WorkshopInput(BaseModel):
     tax_id: str = Field(min_length=12, max_length=13)
     state: str = Field(min_length=2, max_length=120)
     municipality: str = Field(min_length=2, max_length=120)
-    locality: str = Field(min_length=2, max_length=120)
+    locality: str | None = Field(default=None, max_length=120)
     colony: str = Field(min_length=2, max_length=120)
     postal_code: str = Field(min_length=5, max_length=5)
     photo_data_url: str | None = Field(default=None, max_length=7_000_000)
@@ -163,10 +163,17 @@ class WorkshopInput(BaseModel):
     def validate_tax_id(cls, value: str) -> str:
         return normalize_rfc(value)
 
-    @field_validator("state", "municipality", "locality", "colony")
+    @field_validator("state", "municipality", "colony")
     @classmethod
     def validate_address_text(cls, value: str, info) -> str:
         return normalize_address_text(value, info.field_name)
+
+    @field_validator("locality")
+    @classmethod
+    def validate_optional_locality(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        return normalize_address_text(value, "localidad")
 
     @field_validator("postal_code")
     @classmethod
@@ -188,6 +195,14 @@ class WorkshopUpdateInput(BaseModel):
     locality: str | None = Field(default=None, max_length=120)
     colony: str = Field(min_length=2, max_length=120)
     postal_code: str = Field(min_length=5, max_length=5)
+
+    photo_data_url: str | None = Field(default=None, max_length=7_000_000)
+
+    @field_validator("photo_data_url")
+    @classmethod
+    def validate_photo(cls, value: str | None) -> str | None:
+        decode_photo_data_url(value)
+        return value
 
     @field_validator("name")
     @classmethod
